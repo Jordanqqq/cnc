@@ -1,0 +1,144 @@
+﻿@page
+@model CncGcodeSimulator.Pages.IndexModel
+@{
+    ViewData["Title"] = "G-code визуализатор";
+}
+
+<h1 class="text-center">G-code визуализатор</h1>
+
+<form method="post" style="max-width: 520px; margin: 0 auto;">
+    <label>Тип станка:</label>
+    <select asp-for="MachineType" class="form-select">
+        <option value="milling">Фрезерный</option>
+        <!-- <option value="lathe">Токарный</option> -->
+    </select>
+
+    <label class="mt-2">Введите G-код:</label>
+    <textarea asp-for="UserGCode" rows="12" class="form-control" style="width: 100%; max-width: 500px; display: block;"></textarea>
+    <button type="submit" class="btn btn-primary mt-2">Построить</button>
+</form>
+
+<canvas id="cncCanvas" width="500" height="500" class="border mt-3" style="display: block; margin: 20px auto;"></canvas>
+
+@section Scripts {
+    <script>
+        const canvas = document.getElementById("cncCanvas");
+        const ctx = canvas.getContext("2d");
+
+        let scale = 1;
+        const minScale = 0.2;
+        const maxScale = 5;
+        const scaleStep = 0.1;
+
+        const points = @Html.Raw(Model.MillingCoordinatesJson);
+
+        const gridSize = 25; // базовый размер клетки при scale=1
+        const width = canvas.width;
+        const height = canvas.height;
+
+        let currentStep = 0;
+
+        // Центр (в пикселях)
+        const centerX = width / 2;
+        const centerY = height / 2;
+
+        canvas.addEventListener("wheel", function(event) {
+            event.preventDefault();
+            if (event.deltaY < 0) {
+                // Зумим вперёд
+                scale = Math.min(scale + scaleStep, maxScale);
+            } else {
+                // Зумим назад
+                scale = Math.max(scale - scaleStep, minScale);
+            }
+            currentStep = 0; // сброс анимации при изменении масштаба
+            animate();
+        });
+
+        function drawGrid() {
+            ctx.save();
+            ctx.clearRect(0, 0, width, height);
+            ctx.strokeStyle = "rgba(0,0,0,0.1)";
+            ctx.lineWidth = 1;
+
+            const scaledGridSize = gridSize * scale;
+
+            // Вертикальные линии
+            for (let x = centerX % scaledGridSize; x <= width; x += scaledGridSize) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, height);
+                ctx.stroke();
+            }
+
+            // Горизонтальные линии
+            for (let y = centerY % scaledGridSize; y <= height; y += scaledGridSize) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(width, y);
+                ctx.stroke();
+            }
+
+            ctx.restore();
+        }
+
+        // Функция для преобразования координат из логических (мм) в пиксели с учётом масштаба и центра
+        function toCanvasCoords(pt) {
+            return {
+                x: centerX + pt.x * 5 * scale,
+                y: centerY - pt.y * 5 * scale
+            };
+        }
+
+        function drawPath(uptoIndex) {
+            if (points.length === 0) return;
+
+            ctx.save();
+            ctx.strokeStyle = "black";
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+
+            let first = toCanvasCoords(points[0]);
+            ctx.moveTo(first.x, first.y);
+
+            for (let i = 1; i <= uptoIndex && i < points.length; i++) {
+                let p = toCanvasCoords(points[i]);
+                ctx.lineTo(p.x, p.y);
+            }
+
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        function drawMovingLine(step) {
+            if (step >= points.length - 1) return;
+
+            ctx.save();
+            ctx.strokeStyle = "red";
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+
+            let p1 = toCanvasCoords(points[step]);
+            let p2 = toCanvasCoords(points[step + 1]);
+            ctx.moveTo(p1.x, p1.y);
+            ctx.lineTo(p2.x, p2.y);
+
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        function animate() {
+            ctx.clearRect(0, 0, width, height);
+            drawGrid();
+            drawPath(currentStep);
+            drawMovingLine(currentStep);
+
+            if (currentStep < points.length - 1) {
+                currentStep++;
+                setTimeout(animate, 30);
+            }
+        }
+
+        animate();
+    </script>
+}
